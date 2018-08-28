@@ -1,0 +1,539 @@
+.text
+# Sachin Deshpande
+# Floating Point ALU
+# Pseudocode
+# Float_Print
+# 	print SIGN:
+#	shift the $t1 right to isolate sign bit
+#	print $t1
+#	print EXPONENT: 
+#	shift the $t1 right to remove mantissa, mask to isolate exponent
+#	print $t1
+#	print MANTISSA: 
+#	mask with 23 1's to isolate mantissa
+#	print $t1
+#
+# Float_Compare
+#	mask out sign bits (if they are different, one is obviously smaller than other)
+#	if this is the case, determine which one is negative, which one is positive
+#		load appropriate return value for the positive number
+#		go to end of method
+#	mask out exponents. 
+#	if both signs are negative, store -1, since result is reversed (the bigger negative is of lesser value)
+#	if both exponents are not same
+#		load appropriate return value for the bigger exponent
+#		go to end of method
+#	mask out mantissa
+#	if both mantissas are not the same
+#		load appropriate return value for the bigger mantissa
+#		go to end of method
+# 	if this point has been reached, inputs are equal, load 0 to be returned
+# 	end:
+# 	if both numbers negative
+#		invert result, multiply return value by -1
+#	 return result, or $v0
+#
+# Float_Addition
+#	check edge case of 0 (algorithm only works correctly if both inputs non-zero)
+#	if both args 0, return 0
+#	if one of args is 0, return the other 
+#	mask appropriatley to get sign, exponent, and mantissa, add in leading 1
+#	if both exponents are not negative
+#		count # of times to shift smaller exponent to larger
+#		shift mantissa of smaller over to match larger's exponent
+#		set the smaller's exponent to the larger's exponent
+#	if both exponents are negative
+#		count # of times to shift larger exponent to match smaller
+#		shift mantissa of larger to match smaller exponent
+#		set larger's exponent to match smaller exponent
+#	if signs are same
+#		add mantissas
+#	if signs not same
+#		subtract mantissass
+#	if mantissa is negative
+#	 	set v0 to 1, multiply mantissa by -1
+#	prepare to call Floats_Normalize
+#	store mantissa to a1 and a2, a3 to exponent
+#	save the $ra to stack
+#	normalize the current number
+#	load back $ra, update stack
+#	return
+#
+# Float_Multiply
+#	check base case of 0
+#	if one of args is 0 return 0
+#	mask appropriatley to get sign, exponent, and mantissa, add in leading 1
+#	if signs are equal
+#		store 0 into $a1, since neg * neg = pos, pos * pos = pos
+#	 else 
+#		store 1 into $a1, since negative * positive is negative
+#	 subtract 127 from both exponents
+#	 add the exponents
+#	 add 127 back to the result to reintroduce the bias, move to $a3
+#	 multiply the mantissa with hidden leading bit
+#	 move hi into $a1, lo into $a2
+#	 save the $ra to stack
+#	 normalize the current number
+#	 load back $ra, update stack
+#	 return
+#
+# Float_Normalize
+#	 calculate leading 0
+#	 if msb is in spot 17
+#	 	number is already normalized,move to v0 and return
+#	 else if leading zero > 17
+#		go to DECIMAL_CASE_2
+#	 else if 17 < leading 0 < 32
+#		goto DECIMAL_CASE_1
+#	 else 
+#		goto INTEGER CASE
+#	 INTEGER_CASE
+#		find shift amount n
+#		shift mantissa n bits to the right
+#		add n to the exponent
+#		put sign, exponent, and mantissa into v0
+#		return
+#	 DECIMAL_CASE_1
+#		find shift amount n
+#	 	shift mantissa n bits left
+#		subtract n bits from the exponent
+#		shift these numbers correspondingly and add to $v0, similar to above
+#		return	
+#	 DECIMAL_CASE_2
+#		find number to shift n
+#		shift mantissa n bits left
+#		subtract 14 from the exponent
+#		subtract n from the exponent as well
+#		shift these numbers correspondingly and add to $v0, similar to above
+#		return
+
+
+# subprogram: Float_Print
+# purpose: To print the sign, exponent, and mantissa in the argument $a0
+# input: $a0 - the float to be printed
+# returns: nothing, but syscalls to print out info about float
+# side effects: The float's relevant information is printed out.
+# registers used:
+# $a0 stores the argument, the float to be printed out
+# $t1 is used as a dummy register to mutate to obtain bits of the float
+# $t2 is register used to hold a bit to be printed out
+# $t3 is the loop counter in the loop to print exponent and mantissa
+# $t9 is register used to hold the $a0 argument
+# $v0 and $a0 used in syscalls to print strings and integers
+Float_Print:
+	# print out sign
+	move $t9, $a0					# move $a0 to $t9, so can keep track of data
+	move $t1, $a0					# move $a0 to $t1, will be modified
+	srl  $t1, $t1, 31				# shift 31 bits right to get sign bit. 
+	li $v0, 4					# prepare to print out a string
+	la $a0, sign					# load the "SIGN: " prompt to be printed
+	syscall						# print out the string
+	li $v0, 1					# prepare to print out an int
+	la $a0, ($t1)					# load $t1 to $a0, to print it out
+	syscall						# print out the sign bit
+	li $v0, 4					# prepare to print out a string
+	la $a0, newline					# load the newline string to $a0
+	syscall						# print out the newline string
+	# print out exponent
+	move $t1, $t9					# move $a0 to $t1, so can keep track of data
+	srl $t1, $t1, 23				# shift 31 bits right to disregard mantissa
+	andi $t1, $t1, 255				# mask with 1111_1111, to get the exponent
+	li $v0, 4					# prepare to print out a string
+	la $a0, exponent				# load the "EXPONENT: " string to be printed
+	syscall						# print out the string
+
+	li $t3, 0					# load 0 to $t3, it will be the loop counter 
+	PRINTEXPLOOP:					# label for the loop to print exponent
+		beq $t3, 8, ENDEXPPRINTLOOP 		# if 8 bits have been printed, exit loop
+		andi $t2, $t1, 128			# and the exponent with 1000_000 to get MSB
+		srl $t2, $t2, 7				# shift the exponent left
+		li $v0, 1				# prepare to print out an integer
+		la $a0, ($t2)				# load the bit to be printed
+		sll $t1, $t1, 1				# shift the exponent left
+		syscall					# print out the bit
+		
+		addi $t3, $t3, 1			# increment the loop counter by 1
+		b PRINTEXPLOOP				# go to the beginning of the loop
+	ENDEXPPRINTLOOP:				# label for loop to end at
+	li $v0, 4					# prepare to print out a string
+	la $a0, newline					# load the newline string to $a0
+	syscall						# print out the newline string
+	
+	# print out mantissa
+	move $t1, $t9					# move $t9 to $t1, the dummy register
+	andi $t1, $t1, 8388607 				# mask with 23 1's to get the mantissa
+	la $a0, mantissa				# load the string "MANTISSA: " to $a0
+	syscall						# print out the mantissa string
+	li $t3, 0					# load 0 back to $t3, will be loop counter variable
+	PRINTMANLOOP:					# label for the loop printing mantissa
+		beq $t3, 23, ENDMANPRINTLOOP		# if 23 bits have been printed, exit
+		
+		andi $t2, $t1, 4194304 			# mask with 1 followed by 22 0's
+		srl $t2, $t2, 22			# shift $t2 right 22 bits to get bit
+		li $v0, 1				# prepare to print an int
+		la $a0, ($t2)				# load $t2 to $a0 to be printed
+		sll $t1, $t1, 1				# shift the bits in the man left 1
+		syscall					# print out the int
+		
+		addi $t3, $t3, 1			# increment loop var by 1
+		b PRINTMANLOOP				# go back to the beginning of loop
+	ENDMANPRINTLOOP:				# label for end of loop to jump to
+	li $v0, 4					# prepare to print out a string
+	la $a0, newline					# load newline string to be printed
+	syscall						# print out newline string
+	
+	# return
+	jr $ra						# return
+
+
+# subprogram: Float_Compare
+# purpose: To compare two numbers
+# input: $a0, the first float, $a1, the second float
+# returns: 1 if 1st float > 2nd float, -1 if 2nd float > 1st float, 0 iff 1st = 2nd 
+# registers used:
+# $a0 stores the first float argument
+# $a1 stores the second float argument
+# $t0 is used as a dummy register to hold sign, exponent, and mantissa of 1st float
+# $t1 is used as a dummy register to hold sign, exponent, and mantissa of 2nd float
+# $t8 is register used to hold the a -1 if the two inputs are both negative
+# $v0 used to return 1, 0, or -1
+Float_Compare:
+	move $t0, $a0					# move $a0 to $t0, will change $t0
+	move $t1, $a1					# move $a1 to $t1, will change $t1
+	srl $t0, $t0, 31				# shift right 31 bits to get sign bit
+	srl $t1, $t1, 31				# shift right 31 bits to get sign bit
+	beq $t0, $t1, SAME_SIGN				# conditional to see if signs are same
+		bgt $t0, $t1, T0_NEG_T1_POS		# if $t0 is neg, goto label
+			li $v0, 1			# $t0 is pos, load 1 into $v0
+			b CFEND				# goto CFEND
+		T0_NEG_T1_POS:				# branch conditional if $t0 is neg
+			li $v0, -1			# $t0 is neg, load -1 to $v0
+			b CFEND				# goto CFEND
+	SAME_SIGN:					# label to go to if signs are same
+	li $t8, 0					# load 0 to $t8
+	beqz $t0, BOTH_POS				# if both signs are 0, dont go inside conditional	
+		li $t8, -1				# load -1 in $t8 if both neg
+	BOTH_POS:					# label to go to if both pos
+	
+	move $t0, $a0					# move $a0 to $t0, will change $t0
+	move $t1, $a1					# move $a1 to $t1, will change $t1
+	srl $t0, $t0, 23				# shift right 23 bits to get rid of exp
+	srl $t1, $t1, 23				# shift right 23 bits to get rid of exp
+	andi $t0, $t0, 255 				# mask with 1111_1111 to get exp
+	andi $t1, $t1, 255				# mask with 1111_1111 to get exp
+	beq $t0, $t1, SAME_EXP				# conditional to see if have same exp
+		bgt $t0, $t1, T0_EXP_GRT_T1		# if $t0's exp > $t1's exp, goto label
+			li $v0, -1			# load -1 to $v0
+			b CFEND				# goto CFEND
+		T0_EXP_GRT_T1:				# label if a0's exp > a1's exp
+			li $v0, 1			# load 1 into $v0
+			b CFEND				# goto CFEND
+	SAME_EXP:					# label to go to if same exp
+	
+	move $t0, $a0					# move $a0 to $t0, will change $t0
+	move $t1, $a1					# move $a1 to $t1, will change $t1
+	andi $t0, $t0, 8388607 				# mask with 111_1111_1111_1111_1111_1111 to get mantissa
+	andi $t1, $t1, 8388607				# mask with 111_1111_1111_1111_1111_1111 to get mantissa
+	beq $t0, $t1, SAME_MAN				# conditional to see if mantissas are same
+		bgt $t0, $t1, T0_MAN_GRT_T1		# conditional to see if t0's man > t1's man
+			li $v0, -1			# load -1 to $v0
+			b CFEND				# goto CFEND
+		T0_MAN_GRT_T1:				# label to go to if above conditional true
+			li $v0, 1			# load 1 into $v0
+			b CFEND				# goto CFEND
+	SAME_MAN:					# label to go to if same mantissa
+	li $v0, 0					# if this point has been reached, load 0 to $v0, as a0 = a1
+	
+	CFEND:						# label to go to and end of method
+	beqz $t8, RET					# if both #'s negative, come inside conditional
+		mul $v0, $v0, -1			# multiply result by -1
+	RET:						# label to go to if both #'s pos
+	# return
+	jr $ra						# return
+					
+# subprogram: Float_Addition
+# purpose: To add two floats
+# input: $a0, the first float, $a1, the second float
+# returns: $v0, containing the normalized sum of the two floats added
+# registers used:
+# $a0 stores the first float argument
+# $a1 stores the second float argument
+# $t0 stores sign of 1st float
+# $t1 stores sign of 2nd float
+# $t2 stores exponent of 1st float
+# $t3 stores exponent of 2nd float
+# $t4 stores mantissa of 1st float
+# $t5 stores mantissa of 2nd cloat
+# $t6 used as dummy register to check if both #'s negative, then used to store # added to exponent
+# $t7 used to store exponent which is passed to normalize
+# $v0 used to return the resultant float
+# $sp used to store $ra on stack before calling normalize
+# $ra stored on stack
+Float_Addition:
+	# edge case of 0, since addition algorithm only works if stuff is inside inputs
+	bnez $a0, FIRST_ARG_ZERO			# check to see if first arg is 0
+		bnez $a1, RETURN_SECOND			# check to see if second arg is also 0
+			li $v0, 0			# load 0 to be returned
+			jr $ra				# return
+		RETURN_SECOND:				# know second arg to be non-zero
+			move $v0, $a1			# load $a1 to be returned
+			jr $ra				# return
+	FIRST_ARG_ZERO:					# label to jump to if $a1 is non-zero
+	bnez $a1, SECOND_ARG_ZERO			# check to see if second argument is non-zero
+		move $v0, $a0				# load $a0 to be returned
+		jr $ra					# return
+	SECOND_ARG_ZERO:				# label to jump to if both numbers non-zero
+	move $t0, $a0 					# move $a0 to $t0, will hold sign bit
+	move $t1, $a1					# move $a1 to $t1, will hold sign bit
+	srl $t0, $t0, 31				# shift right 31 bits to isolate sign bit
+	srl $t1, $t1, 31				# shift right 31 bits to isolate sign bit
+	
+	move $t2, $a0 					# move $a0 to $t2, will hold exponent
+	move $t3, $a1					# move $a1 to $t3, will hold exponent
+	srl $t2, $t2, 23				# shift 23 bits right to get rid of mantissa
+	andi $t2, $t2, 255 				# mask with 255 (1111_1111), isolate exponent
+	srl $t3, $t3, 23				# shift 23 bits right to get rid of mantissa
+	andi $t3, $t3, 255				# mask with 255 (1111_1111), isolate exponent
+	
+	move $t4, $a0 					# move $a0 to $t4, will hold mantissa
+	move $t5, $a1					# move $a1 to $t5, will hold mantissa
+	andi $t4, $t4, 0x007FFFFF  			# mask with 23 1's to isolate mantissa
+	andi $t5, $t5, 0x007FFFFF 			# mask with 23 1's to isolate mantissa
+	ori $t4, $t4, 0x00800000 			# add in leading (hidden) bit, number being followed by 23 0's
+	ori $t5, $t5, 0x00800000			# add in leading (hidden) bit, same literal as above
+	li $t6, 0					# load 0 to $t6, will determine signs of floats
+	add $t6, $t6, $t0				# add $t0 to $t6
+	add $t6, $t6, $t1				# add $t1 to $t6
+	
+	li $a0, 0					# load 0 to a0, will determine if both signs negative
+	bne $t6, 2, BOTH_SIGN_NEGATIVE			# check to see if both signs are negative
+		li $a0, 1				# store 1 into a0 if both signs negative, as sum of two negatives is negative
+	BOTH_SIGN_NEGATIVE:				# label to jump to if either sign is not negative
+		li $t6, 0				# load 0 to t6, will hold number to be added to exponent
+		blt $t2, $t3, a1_LESS_a2		# check to see if 1st exponent is less than the 2nd exponent
+			sub $t6, $t2, $t3		# subtract t3 from t2 and store in t6, which is how much exponent shifts
+			srlv $t5, $t5, $t6		# shift the mantisas t6
+			move $t3, $t2			# copy the updated exponent to t2
+			b END_NORM_EXP			# jump to end of normalize exponent label
+		a1_LESS_a2:				# check to see if a1's exponent is less than a2
+			sub $t6, $t3, $t2		# subtract t2 from t3 and store in t6, which is how much exponent shifts
+			srlv $t4, $t4, $t6		# shift the mantisas t6
+			move $t2, $t3			# copy the updated exponent to t2
+			b END_NORM_EXP			# jump to end of normalize exponent label
+		BOTH_NEGATIVE:				# label to jump to if both numbers negative
+	END_NORM_EXP:					# label to jump to after getting correct exponent
+	bne $t0, $t1, SUBTRACT				# check to see if signs are the same
+		add $t6, $t4, $t5			# add both mantissas together
+		b END_ADD_SUB				# go to end, the end of addition/subtraction label
+	SUBTRACT:					# label to jump to if numbers have differing signs
+		beqz $t0, SECOND_NEGATIVE 		# check to see if first is negative
+			sub $t6, $t5, $t4		# subtract mantissas
+			b END_COMP			# go to end of computation label
+		SECOND_NEGATIVE: 			# label to jump to if second number is negative
+			sub $t6, $t4, $t5		# subtract mantissas
+		END_COMP:				# label for the end of computation
+		bgtz $t6, POS_CASE			# check to see if mantissa is negative
+			mul $t6, $t6, -1		# multiply mantissa by -1 so it is positive
+			li $a0, 1			# make the sign bit negative
+		POS_CASE:				# label to jump to if mantissa is positive
+	END_ADD_SUB:					# label to jump to if normal addition is carried out
+	
+	move $a1, $t6					# move mantissa to a1
+	move $a2, $zero					# load 0 into a2, as no mantissa in a2
+	subi $t7, $t2, 9				# subtract 9 to account for shifting mantissa all the way to the left
+	move $a3, $t7					# move exponent to a3
+	
+	# save $ra on stack
+	subi $sp, $sp, 4				# subtract 4 from sp
+	sw $ra, ($sp)					# save current stack pointer
+	jal Float_Normalize				# normalize the float
+	lw $ra, ($sp)					# load back correct stack pointer
+	addi $sp, $sp, 4				# add 4 back to sp, to correct the initial adjustment
+	jr $ra						# return from method
+
+# subprogram: Float_Multiply
+# purpose: To multiply two floats
+# input: $a0, the first float, $a1, the second float
+# returns: $v0, containing the normalized product of the two floats multiplied 
+# registers used:
+# $a0 stores the first float argument
+# $a1 stores the second float argument
+# $t0 stores sign of 1st float
+# $t1 stores sign of 2nd float
+# $t2 stores exponent of 1st float
+# $t3 stores exponent of 2nd float
+# $t4 stores mantissa of 1st float
+# $t5 stores mantissa of 2nd cloat
+# $t6 used to keep track of the number needed to added to exponent
+# $v0 used to return the resultant float
+# hi used to get 63-32 bits of mantissa
+# lo used to get 31-0 bits of mantissa
+# $sp used to store $ra on stack before calling normalize
+# $ra stored on stack
+Float_Multiply:
+	# edge case of 0, since addition algorithm only works if stuff is inside inputs
+	bnez $a0, ARG1_NOT_ZERO				# check to see if first argument is zero
+	li $v0, 0					# load 0 to v0, as zero will be returned
+	jr $ra						# return
+	ARG1_NOT_ZERO:					# label to jump to if first argument is not zero
+	bnez $a1, ARG2_NOT_ZERO				# check to see if second argument is zero					
+	li $v0, 0					# load 0 to v0, as zero will be returned
+	jr $ra						# return
+	ARG2_NOT_ZERO:					# label to jump to if second argument is not zero
+	move $t0, $a0 					# move a0 to t0, will hold sign of a0
+	move $t1, $a1 					# move a1 to t1, will hold sign of a1
+	srl $t0, $t0, 31				# shift 31 bits to isolate sign bit
+	srl $t1, $t1, 31				# shift 31 bits to isolate sign bit
+	
+	move $t2, $a0 					# move a0 to t2, will hold sign of a0
+	move $t3, $a1					# move a1 to t3, will hold sign of a1
+	srl $t2, $t2, 23				# shift right 23 bits to remove mantissa
+	andi $t2, $t2, 255 				# mask with 1111_1111, so $t2 contains exponent of $a0
+	srl $t3, $t3, 23  				# shift right 23 bits to remove mantissa
+	andi $t3, $t3, 255				# mask with 1111_1111, so $t2 contains exponent of $a0
+	
+	move $t4, $a0 					# move a0 to t4, will hold sign of a0
+	move $t5, $a1					# move a1 to t5, will hold sign of a1
+	andi $t4, $t4, 0x007FFFFF			# mask with 23 1's, to store & mask the mantissa
+	andi $t5, $t5, 0x007FFFFF 			# mask with 23 1's, to store & mask the mantissa
+	ori $t4, $t4, 0x00800000 			# add leading 1, $t4 contains mantissa of $a0
+	ori $t5, $t5, 0x00800000 			# add leading 1, $t5 contains mantissa of $a0
+	
+	bne $t0, $t1, RESULT_NEGATIVE			# check to see if both signs are same
+		li $a0, 0				# load 0 to a0, as neg * neg is pos, pos * pos is pos
+		b END_SIGN				# go to the label for end of checking sign
+	RESULT_NEGATIVE:				# label to jump to if signs differ, result will be negative
+		li $a0, 1				# load 1 into a0, as product is negative
+	END_SIGN:					# label to jump to after checking signs
+	
+	subi $t2, $t2, 127				# subtract 127 from both exponents to remove bias, 127 because IEEE specifies a bias of 127 in exponents
+	subi $t3, $t3, 127				# subtract 127 from both exponents
+	add $t6, $t2, $t3				# add the exponents
+	addi $t6, $t6, 127				# reintroduce the bias of 127
+	move $a3, $t6					# move the exponent to $a3
+	mult $t4, $t5					# multiply the mantissas
+	mfhi $a1					# store upper 32 bits to $a1
+	mflo $a2					# store lower 32 bits to $a2
+	# save $ra on stack
+	subi $sp, $sp, 4				# subtract 4 from stack to account for storing $ra
+	sw $ra, ($sp)					# store $ra to stack
+	jal Float_Normalize				# normalize the number
+	lw $ra, ($sp)					# load back the $ra
+	addi $sp, $sp, 4				# update stack
+	jr $ra						# return
+	
+	
+# subprogram: Float_Normalize
+# purpose: To normalize a float
+# input: $a0 - The sign of float
+# $a1, 63-32 bit of mantissa
+# $a2, 31-0 bit of mantissa
+# $a3, exponent
+# returns: $v0, containing the normalized float
+# registers used:
+# $a0 - The sign of float
+# $a1, 63-32 bit of mantissa (31-13 bits are integer, rest are mantissa)
+# $a2, 31-0 bit of mantissa
+# $a3, exponent
+# $t0, holds number of bits to shift
+# $t1 holds leading zeros in $a1
+# $t8 dummy register to mask bits
+# $t9 also a dummy register to mask bits
+# $v0 used to return the resultant float
+# $sp used to store $ra on stack before calling normalize
+# $ra stored on stack
+Float_Normalize:
+	clz $t1, $a1					# count number of leading zeros in a1, store into t1
+	bne $t1, 17, NOT_NORMALIZED			# check to see if the number of leading zeros is 17
+	# number is already normalized, no need to do anything to it
+	li $v0, 0					# load 0 to v0 to re-initialize it
+	sll $a0, $a0, 31				# shift sign bit left 31 to store properly
+	add $v0, $v0, $a0				# add sign bit into v0
+	sll $a3, $a3, 23				# shift exponent 23 left
+	add $v0, $v0, $a3				# add into v0
+	and $a1, $a1, 16383				# mask mantissa with 14 1's 
+	sll $a1, $a1, 9					# shift a1 left 9, as 9 other bits from a2 must come in
+	add $v0, $v0, $a1				# add into v0
+	srl $a2, $a2, 23				# shift a2 23 bits right to get the 9 that need to be added back into v0
+	add $v0, $v0, $a2				# add back into v0
+	jr $ra 						# return
+	NOT_NORMALIZED:					# label to jump to if number is not already normalized
+	beq $t1, 32, DEC_CASE_2				# check to see if a1 is completely 0
+	bgt $t1, 18, DEC_CASE_1				# check to see if the number of leading zeros is > 17
+	b CASE_INT					# default to case int
+	CASE_INT:					# label to jump to if number > 1.0
+		clz $t0, $a1				# count number of leading 0's, store in t0
+		li $t1, 17				# load 17 to t1, will be subtracted from t0 to find # to shift. 17 used because method expects 18-bit integer
+		sub $t0, $t1, $t0 			# subtract 17 from t0 to find #  to shift, n
+		move $t8, $a1				# move a1 to t8, to create a copy
+		srlv $a2, $a2, $t0			# shift a2 n over
+		li $t1, 32				# load 32 to t1, will be used to find # to shift t8 by
+		sub $t1, $t1, $t0			# subtract t0 from 32
+		sllv $t8, $t8, $t1 			# shift t8 by t1, 32 - # 
+		srlv $t8, $t8, $t1 			# shift back to right, effectively masking
+		sllv $t8, $t8, $t1 			# shift back to left
+		add $a2, $a2, $t8 			# add the correct number into a2
+		srlv $a1, $a1, $t0			# shift t1 n left, to position properly
+		add $a3, $a3, $t0			# add n to exponent, in a3
+		srl $a2, $a2, 23			# shift a2 23 units right to get rid of uncapturable mantissa
+		# load back into $v0
+		li $v0, 0				# re-initialize v0 to 0
+		sll $a0, $a0, 31			# shift sign bit 31 bits over
+		add $v0, $v0, $a0			# add sign bit into v0
+		sll $a3, $a3, 23			# shift exponent 23 left
+		add $v0, $v0, $a3			# add back into v0
+		and $a1, $a1, 16383			# mask a1's mantissa with 14 1's
+		sll $a1, $a1, 9				# shift it left 9 to position properly
+		add $v0, $v0, $a1			# add a1 to v0
+		add $v0, $v0, $a2			# add a2, which is already positioned correctly, back to v0
+		jr $ra					# return
+	
+	DEC_CASE_1:					# label to jump to if leading zero is in a1
+		clz $t1, $a1				# count leading zeros in a1, store in t1
+		li $t0, 17				# load 17 to t0, will be subtracted from t1 to find # to shift
+		sub $t0, $t1, $t0 			# subtract 17 from t1 to find number to shift, n
+		li $t3, 32				# load 32 to t3, will have t0 subtracted from it to find amount to shift by
+		sub $t3, $t3, $t0 			# subtract to from 32, amount to shift and effectively mask by
+		move $t9, $a2				# move a2 to t9, create a copy
+		srlv $t9, $t9, $t3			# shift t9 n units right
+		sllv $t9, $t9, $t3 			# shift t9 n units left, effectively mask
+		srlv $t9, $t9, $t3			# shift right again to return to normal position
+		sllv $a1, $a1, $t0 			# shift left n units to align properly
+		add $a1, $a1, $t9			# add t9 to a1, to transfer mantissa from a2 to a1
+		sllv $a2, $a2, $t0			# shift a2 left n to align 
+		sub $a3, $a3, $t0			# subtract n from the exponent
+		# load back into $v0
+		li $v0, 0				# re-initialize v0 to 0
+		sll $a0, $a0, 31			# shift sign bit 31 bits over
+		add $v0, $v0, $a0			# add sign bit into v0
+		sll $a3, $a3, 23			# shift exponent 23 left
+		add $v0, $v0, $a3			# add back into v0
+		and $a1, $a1, 16383 			# mask a1's mantissa with 14 1's
+		sll $a1, $a1, 9				# shift it left 9 to position properly
+		add $v0, $v0, $a1			# add a1 to v0
+		srlv $a2, $a2, $t3			# shift a2 (32 - n) to properly align
+		add $v0, $v0, $a2			# add a2 back to v0
+		jr $ra					# return
+	
+	DEC_CASE_2:					# label to jump to if leading one is not in a1
+		clz $t1, $a2				# cound leading zeros in a2, store into t1
+		addi $t1, $t1, 1 			# add 1 to the # of zeros to get n, amount to shift by
+		sllv $a2, $a2, $t1			# shift left t1, now everything is left-justified
+		srl $a2, $a2, 23 			# shift right 23 to right justify everything
+		andi $a2, $a2, 511 			# mask with 1_1111_1111 to isolate mantissa
+		subi $a3, $a3, 14			# subtract 14 from exponent to account for a1 being all zero's
+		sub $a3, $a3, $t1			# subtract amount to shift by n from exponent
+		# load back into $v0
+		li $v0, 0				# re-initialize v0 to 0
+		sll $a0, $a0, 31			# shift sign bit 31 bits over
+		add $v0, $v0, $a0			# add sign bit into v0
+		sll $a3, $a3, 23			# shift exponent 23 left
+		add $v0, $v0, $a3			# add back into v0
+		add $v0, $v0, $a2			# add a2 back to v0, as it is already properly aligned
+		jr $ra					# return
+	
+.data
+newline:	.asciiz "\n"				# string to print out new lines
+sign: 		.asciiz "SIGN: "			# string to print sign, used in Float_Print
+exponent: 	.asciiz "EXPONENT: "			# string to print exponent, used in Float_Print
+mantissa:	.asciiz "MANTISSA: "			# string to print mantissa, used in Float_Print
