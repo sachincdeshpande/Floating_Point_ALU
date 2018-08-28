@@ -1,0 +1,179 @@
+# Sachin Deshpande
+# Floating Point ALU
+# Testing file for FloatingPointALU to ensure module works
+
+main:
+	jal testPrint  				# Test for Float_Print
+	
+	jal testCompare 			# Test for Float_Compare
+
+	jal testAddition     			# Test for Float_Addition
+	
+	jal testMultiply    			# Test for Float_Multiply
+	
+	li $v0, 10				# prepare to end the program		
+	syscall					# end the program
+
+.text
+testPrint: 
+	# test for Float_Print 
+	subi $sp, $sp, 4			# subtract 4 from sp to save sp
+	sw $ra, ($sp)				# save sp
+	
+	la $a0, FloatPrint			# prepare to print out "Float_Print Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw  $a0, test_A				# load test_A float to be printed
+	
+	la $t9, Float_Print			# load Float_Print method to be next instruction
+  	jalr $t9				# go to Float_Print method
+	# expected result for call on Float_Print(test_A):
+	# SIGN: 1
+	# EXPONENT: 01111110
+	# MANTISSA: 11001100110011001100110
+	
+	la $a0, newline				# prepare to print out newline character
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the newline char
+	
+	lw $ra, ($sp)				# load back stack pointer
+	addi $sp, $sp, 4			# add 4 to sp to update stack
+	
+	jr $ra
+	
+testCompare:
+	# test for Float_Compare		
+	subi $sp, $sp, 4			# subtract 4 from sp to save sp
+	sw $ra, ($sp)				# save sp
+	
+	la $a0, FloatCompare			# prepare to print out "Float_Compare Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw $a0, test_A				# load test_A float to be first argument
+	lw $a1, test_B				# load test_B float to be second argument
+		
+	la $t9, Float_Compare			# load Float_Compare method to be next instruction
+  	jalr $t9  				# go to Float_Compare method
+	# expected result for Float_Compare(test_A, test_B) = -1
+	
+	move $a0, $v0				# move result to $a0, in order to print out
+	li $v0, 1				# prepare to print out an integer
+	syscall					# print the integer, the result of Float_Compare
+	
+	la $a0, newline				# prepare to print out newline character
+	li $v0, 4				# prepare to print out a string
+	syscall 				# print out the newline char
+	
+	la $a0, FloatCompare			# prepare to print out "Float_Compare Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw $a0, test_B				# load test_B float to be first argument
+	lw $a1, test_A				# load test_A float to be second argument
+		
+	la $t9, Float_Compare			# load Float_Compare method to be next instruction
+  	jalr $t9				# go to Float_Compare method
+	# expected result for Float_Compare(test_B, test_A) = 1, opposite call of above
+	
+	move $a0, $v0				# move result to $a0, in order to print out
+	li $v0, 1				# prepare to print out an integer
+	syscall					# print the integer, the result of Float_Compare
+	
+	la $a0, newline				# prepare to print out newline character
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the newline char
+	
+	la $a0, FloatCompare			# prepare to print out "Float_Compare Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw $a0, test_A				# load test_A float to be first argument
+	lw $a1, test_A				# load test_A float to be second argument
+		
+	la $t9, Float_Compare			# load Float_Compare method to be next instruction
+  	jalr $t9				# go to Float_Compare method
+	# expected result for Float_Compare(test_A, test_A) = 0, as same number
+	
+	move $a0, $v0				# move result to $a0, in order to print out
+	li $v0, 1				# prepare to print out an integer
+	syscall					# print the integer, the result of Float_Compare
+	
+	la $a0, twonewline			# prepare to print out two newline characters
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the two newline chars
+	
+	lw $ra, ($sp)				# load back correct sp
+	addi $sp, $sp, 4			# add 4 to sp to update stack
+	jr $ra					# return
+	
+testAddition:
+	# test for Float_Addition
+	subi $sp, $sp, 4			# subtract 4 from sp to save sp
+	sw $ra, ($sp)				# save sp
+	
+
+	la $a0, FloatAddition			# prepare to print out "Float_Addition Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw $a0, test_A				# load test_A float to be first argument
+	lw $a1, test_B				# load test_B float to be second argument
+		
+	la $t9, Float_Addition			# load Float_Addition method to be next instruction
+  	jalr $t9  				# go to Float_Addition method
+	# expected result for Float_Addition(test_A, test_B) = -.4, is actually -0.39999998 because these numbers cannot be represented exactly in binary
+	
+	mtc1 $v0, $f12				# move result to f12, will be printed out
+	li $v0, 2				# prepare to print out a float
+	syscall					# print out f12, result of Float_Addition
+	
+	la $a0, twonewline			# prepare to print out two newline characters
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the two newline chars
+	
+	lw $ra, ($sp)				# load back correct sp
+	addi $sp, $sp, 4			# add 4 to sp to update stack
+
+	jr $ra					# return
+	
+testMultiply:
+	# test for Float_Multiply
+	subi $sp, $sp, 4			# subtract 4 from sp to save sp
+	sw $ra, ($sp)				# save sp
+
+	la $a0, FloatMultiply			# prepare to print out "Float_Multiply Test: "
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the string
+	
+	lw $a0, test_A				# load test_A float to be first argument
+	lw $a1, test_B				# load test_B float to be second argument
+		
+	la $t9, Float_Multiply			# load Float_Multiply method to be next instruction
+  	jalr $t9  				# go to Float_Multiply method
+  	# expected result for Float_Multiply(test_A, test_B) = -.45
+	
+	mtc1 $v0, $f12				# move result to f12, will be printed out
+	la $v0, 2				# prepare to print out a float
+	syscall					# print out f12, result of Float_Multiply
+	
+	la $a0, twonewline			# prepare to print out two newline characters
+	li $v0, 4				# prepare to print out a string
+	syscall					# print out the two newline chars
+	
+	lw $ra, ($sp)				# load back correct sp
+	addi $sp, $sp, 4			# add 4 to sp to update stack
+
+	jr $ra					# return
+	
+.data
+test_A:	.float -0.9
+test_B:	.float 0.5
+FloatPrint: 		.asciiz  "Float_Print Test: \n"
+FloatCompare: 		.asciiz  "Float_Compare Test: \n"
+FloatAddition: 		.asciiz  "Float_Addition Test: \n"
+FloatMultiply: 		.asciiz  "Float_Multiply Test: \n"
+twonewline:		.asciiz  "\n\n"
+
+.include "FloatingPointALU"
